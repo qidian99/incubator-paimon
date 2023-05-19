@@ -50,11 +50,13 @@ import java.sql.ResultSet;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.apache.paimon.flink.action.Action.getConfigMap;
 import static org.apache.paimon.utils.Preconditions.checkArgument;
@@ -109,6 +111,8 @@ public class MySqlSyncDatabaseAction implements Action {
     @Nullable private final Pattern excludingPattern;
     private final Map<String, String> catalogConfig;
     private final Map<String, String> tableConfig;
+    private final String includingTables;
+    private final List<String> excludedTables;
 
     MySqlSyncDatabaseAction(
             Map<String, String> mySqlConfig,
@@ -147,8 +151,10 @@ public class MySqlSyncDatabaseAction implements Action {
         this.ignoreIncompatible = ignoreIncompatible;
         this.tablePrefix = tablePrefix == null ? "" : tablePrefix;
         this.tableSuffix = tableSuffix == null ? "" : tableSuffix;
-        this.includingPattern = includingTables == null ? null : Pattern.compile(includingTables);
+        this.includingTables = includingTables == null ? ".*" : includingTables;
+        this.includingPattern = Pattern.compile(this.includingTables);
         this.excludingPattern = excludingTables == null ? null : Pattern.compile(excludingTables);
+        this.excludedTables = new LinkedList<>();
         this.catalogConfig = catalogConfig;
         this.tableConfig = tableConfig;
     }
@@ -172,10 +178,11 @@ public class MySqlSyncDatabaseAction implements Action {
         }
 
         List<MySqlSchema> mySqlSchemas = getMySqlSchemaList();
+        String mySqlDatabase = mySqlConfig.get(MySqlSourceOptions.DATABASE_NAME);
         checkArgument(
                 mySqlSchemas.size() > 0,
                 "No tables found in MySQL database "
-                        + mySqlConfig.get(MySqlSourceOptions.DATABASE_NAME)
+                        + mySqlDatabase
                         + ", or MySQL database does not exist.");
 
         catalog.createDatabase(database, true);
@@ -216,8 +223,15 @@ public class MySqlSyncDatabaseAction implements Action {
                 "No tables to be synchronized. Possible cause is the schemas of all tables in specified "
                         + "MySQL database are not compatible with those of existed Paimon tables. Please check the log.");
 
-        mySqlConfig.set(
-                MySqlSourceOptions.TABLE_NAME, "(" + String.join("|", monitoredTables) + ")");
+        // First excluding all tables that failed the excludingPattern and those does not
+        //     have a primary key. Then including other table using regex so that newly
+        //     added table DDLs and DMLs during job runtime will be captured
+        String tableList =
+                excludedTables.stream()
+                                .map(t -> String.format("(?!(%s))", t))
+                                .collect(Collectors.joining(""))
+                        + includingTables;
+        mySqlConfig.set(MySqlSourceOptions.TABLE_NAME, tableList);
         MySqlSource<String> source = MySqlActionUtils.buildMySqlSource(mySqlConfig);
 
         String serverTimeZone = mySqlConfig.get(MySqlSourceOptions.SERVER_TIME_ZONE);
@@ -231,11 +245,15 @@ public class MySqlSyncDatabaseAction implements Action {
                                 env.fromSource(
                                         source, WatermarkStrategy.noWatermarks(), "MySQL Source"))
                         .withParserFactory(parserFactory)
+                        .withDatabase(database)
+                        .withCatalog(catalog)
                         .withTables(fileStoreTables);
+
         String sinkParallelism = tableConfig.get(FlinkConnectorOptions.SINK_PARALLELISM.key());
         if (sinkParallelism != null) {
             sinkBuilder.withParallelism(Integer.parseInt(sinkParallelism));
         }
+
         sinkBuilder.build();
     }
 
@@ -267,12 +285,15 @@ public class MySqlSyncDatabaseAction implements Action {
                 while (tables.next()) {
                     String tableName = tables.getString("TABLE_NAME");
                     if (!shouldMonitorTable(tableName)) {
+                        excludedTables.add(tableName);
                         continue;
                     }
                     MySqlSchema mySqlSchema = new MySqlSchema(metaData, databaseName, tableName);
                     if (mySqlSchema.primaryKeys().size() > 0) {
                         // only tables with primary keys will be considered
                         mySqlSchemaList.add(mySqlSchema);
+                    } else {
+                        excludedTables.add(tableName);
                     }
                 }
             }
@@ -408,7 +429,7 @@ public class MySqlSyncDatabaseAction implements Action {
                 "'hostname', 'username', 'password' and 'database-name' "
                         + "are required configurations, others are optional. "
                         + "Note that 'database-name' should be the exact name "
-                        + "of the MySQL databse you want to synchronize. "
+                        + "of the MySQL database you want to synchronize. "
                         + "It can't be a regular expression.");
         System.out.println(
                 "For a complete list of supported configurations, "
