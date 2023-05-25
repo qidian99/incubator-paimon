@@ -70,7 +70,7 @@ public class FlinkCdcSink extends FlinkSink<CdcRecord> {
 
     @Override
     protected CommittableStateManager<ManifestCommittable> createCommittableStateManager() {
-        return new RestoreAndFailCommittableStateManager(
+        return new RestoreAndFailCommittableStateManager<ManifestCommittable>(
                 () -> new VersionedSerializerWrapper<>(new ManifestCommittableSerializer()));
     }
 }

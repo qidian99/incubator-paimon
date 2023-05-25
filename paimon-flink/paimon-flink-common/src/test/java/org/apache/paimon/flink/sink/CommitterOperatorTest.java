@@ -243,7 +243,7 @@ public class CommitterOperatorTest extends CommitterOperatorTestBase {
                                         table.newStreamWriteBuilder()
                                                 .withCommitUser(user)
                                                 .newCommit()),
-                        new RestoreAndFailCommittableStateManager(
+                        new RestoreAndFailCommittableStateManager<ManifestCommittable>(
                                 () ->
                                         new VersionedSerializerWrapper<>(
                                                 new ManifestCommittableSerializer())));

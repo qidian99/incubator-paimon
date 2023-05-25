@@ -75,7 +75,7 @@ public class FileStoreSink extends FlinkSink<RowData> {
 
     @Override
     protected CommittableStateManager<ManifestCommittable> createCommittableStateManager() {
-        return new RestoreAndFailCommittableStateManager(
+        return new RestoreAndFailCommittableStateManager<ManifestCommittable>(
                 () -> new VersionedSerializerWrapper<>(new ManifestCommittableSerializer()));
     }
 }
