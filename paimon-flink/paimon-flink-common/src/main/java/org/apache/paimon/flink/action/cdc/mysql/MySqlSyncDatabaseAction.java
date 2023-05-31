@@ -112,6 +112,7 @@ public class MySqlSyncDatabaseAction extends ActionBase {
     private final String includingTables;
     private final List<String> excludedTables;
     private final Options catalogOptions;
+    private final MySqlDatabaseSyncMode mode;
 
     public MySqlSyncDatabaseAction(
             Map<String, String> mySqlConfig,
@@ -130,7 +131,8 @@ public class MySqlSyncDatabaseAction extends ActionBase {
                 null,
                 null,
                 catalogConfig,
-                tableConfig);
+                tableConfig,
+                MySqlDatabaseSyncMode.STATIC);
     }
 
     public MySqlSyncDatabaseAction(
@@ -143,7 +145,8 @@ public class MySqlSyncDatabaseAction extends ActionBase {
             @Nullable String includingTables,
             @Nullable String excludingTables,
             Map<String, String> catalogConfig,
-            Map<String, String> tableConfig) {
+            Map<String, String> tableConfig,
+            MySqlDatabaseSyncMode mode) {
         super(warehouse, catalogConfig);
         this.mySqlConfig = Configuration.fromMap(mySqlConfig);
         this.database = database;
@@ -156,6 +159,7 @@ public class MySqlSyncDatabaseAction extends ActionBase {
         this.excludedTables = new LinkedList<>();
         this.catalogOptions = Options.fromMap(catalogConfig);
         this.tableConfig = tableConfig;
+        this.mode = mode;
     }
 
     public void build(StreamExecutionEnvironment env) throws Exception {
@@ -243,7 +247,8 @@ public class MySqlSyncDatabaseAction extends ActionBase {
                         .withDatabase(database)
                         .withCatalogLoader(
                                 () -> FlinkCatalogFactory.createPaimonCatalog(catalogOptions))
-                        .withTables(fileStoreTables);
+                        .withTables(fileStoreTables)
+                        .withMode(mode);
 
         String sinkParallelism = tableConfig.get(FlinkConnectorOptions.SINK_PARALLELISM.key());
         if (sinkParallelism != null) {
@@ -356,6 +361,13 @@ public class MySqlSyncDatabaseAction extends ActionBase {
         String tableSuffix = params.get("table-suffix");
         String includingTables = params.get("including-tables");
         String excludingTables = params.get("excluding-tables");
+        String mode = params.get("mode");
+        MySqlDatabaseSyncMode syncMode;
+        if ("dynamic".equalsIgnoreCase(mode)) {
+            syncMode = MySqlDatabaseSyncMode.DYNAMIC;
+        } else {
+            syncMode = MySqlDatabaseSyncMode.STATIC;
+        }
 
         if (!params.has("mysql-conf")) {
             return Optional.empty();
@@ -375,7 +387,8 @@ public class MySqlSyncDatabaseAction extends ActionBase {
                         includingTables,
                         excludingTables,
                         catalogConfig,
-                        tableConfig));
+                        tableConfig,
+                        syncMode));
     }
 
     private static void printHelp() {
