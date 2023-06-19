@@ -18,15 +18,13 @@
 
 package org.apache.paimon.flink.sink.cdc;
 
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
-import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.flink.action.cdc.mysql.MySqlDatabaseSyncMode;
 import org.apache.paimon.flink.sink.FlinkStreamPartitioner;
 import org.apache.paimon.flink.utils.SingleOutputStreamOperatorUtils;
 import org.apache.paimon.operation.Lock;
 import org.apache.paimon.schema.SchemaManager;
+import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.utils.Preconditions;
 
@@ -150,7 +148,7 @@ public class FlinkCdcSyncDatabaseSinkBuilder<T> {
 
     private void buildForFixedBucket(FileStoreTable table, DataStream<CdcRecord> parsed) {
         DataStream<CdcRecord> partitioned =
-            partition(parsed, new CdcRecordChannelComputer(table.schema()), parallelism);
+                partition(parsed, new CdcRecordChannelComputer(table.schema()), parallelism);
         new FlinkCdcSink(table, lockFactory).sinkFrom(partitioned);
     }
 
@@ -173,10 +171,10 @@ public class FlinkCdcSyncDatabaseSinkBuilder<T> {
             schemaChangeProcessFunction.getTransformation().setMaxParallelism(1);
 
             DataStream<CdcRecord> parsedForTable =
-                SingleOutputStreamOperatorUtils.getSideOutput(
-                    parsed,
-                    CdcMultiTableParsingProcessFunction.createRecordOutputTag(
-                        table.name()));
+                    SingleOutputStreamOperatorUtils.getSideOutput(
+                            parsed,
+                            CdcMultiTableParsingProcessFunction.createRecordOutputTag(
+                                    table.name()));
 
             BucketMode bucketMode = table.bucketMode();
             switch (bucketMode) {
@@ -189,7 +187,7 @@ public class FlinkCdcSyncDatabaseSinkBuilder<T> {
                 case UNAWARE:
                 default:
                     throw new UnsupportedOperationException(
-                        "Unsupported bucket mode: " + bucketMode);
+                            "Unsupported bucket mode: " + bucketMode);
             }
         }
     }
